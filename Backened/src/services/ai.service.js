@@ -1,12 +1,67 @@
-const { GoogleGenAI } = require("@google/genai")
+let ai
+
+async function getGenAiClient() {
+    if (ai) return ai
+    const { GoogleGenAI } = await import("@google/genai")
+    ai = new GoogleGenAI({
+        apiKey: process.env.GOOGLE_GENAI_API_KEY
+    })
+    return ai
+}
+
+const DEFAULT_MODEL_CANDIDATES = [
+    process.env.GENAI_MODEL,
+    "models/gemini-2.0-flash",
+    "models/gemini-1.5-flash",
+    "models/gemini-1.0",
+    "models/gemini-1.5",
+    "models/gemini-2.0",
+    "models/text-bison-001",
+    "models/chat-bison-001",
+    "models/code-bison-001"
+].filter(Boolean)
+
+function normalizeModelName(name) {
+    if (!name || typeof name !== 'string') return null
+    return name.trim().replace(/^models\//, "")
+}
+
+async function getAvailableModelCandidates(aiClient) {
+    try {
+        const listed = await aiClient.models.list()
+        const allModels = Array.isArray(listed?.models) ? listed.models : []
+
+        // Sanitize and normalize names so we can match prefix forms correctly
+        const names = allModels
+            .map(m => m.name || m.id)
+            .filter(Boolean)
+            .map(normalizeModelName)
+            .filter(Boolean)
+
+        // include prioritized defaults, but prefer what the API list actually supports
+        const prioritized = [...new Set([...(process.env.GENAI_MODEL ? [process.env.GENAI_MODEL] : []), ...DEFAULT_MODEL_CANDIDATES])]
+            .map(normalizeModelName)
+            .filter(Boolean)
+
+        const found = [...new Set([
+            ...prioritized.filter(p => names.includes(p)),
+            ...names.filter(n => !prioritized.includes(n)),
+            ...prioritized
+        ])]
+
+        console.info("Model candidates from API:", names)
+        console.info("Resolved model order:", found)
+
+        return found.length ? found : prioritized
+    } catch (err) {
+        console.warn("Unable to list models from GenAI API, falling back to defaults", err)
+        return DEFAULT_MODEL_CANDIDATES
+    }
+}
+
 const { z } = require("zod")
 const { zodToJsonSchema } = require("zod-to-json-schema")
 const puppeteer = require("puppeteer")
-
-const ai = new GoogleGenAI({
-    apiKey: process.env.GOOGLE_GENAI_API_KEY
-})
-
 
 const interviewReportSchema = z.object({
     matchScore: z.number().describe("A score between 0 and 100 indicating how well the candidate's profile matches the job describe"),
@@ -71,13 +126,11 @@ Requirements:
 - Use clear structured data for JSON parsing.
 `
 
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: zodToJsonSchema(interviewReportSchema),
-        }
+    const aiClient = await getGenAiClient()
+    const response = await generateContentUsingFallback({
+        aiClient,
+        prompt,
+        responseMimeType: "text/plain"
     })
 
     console.log('AI service response text:', response && response.text)
@@ -217,6 +270,66 @@ Requirements:
     return parsed
 }
 
+async function generateContentUsingFallback({ aiClient, prompt, responseMimeType, responseSchema }) {
+    let response
+    let lastError
+
+    const candidateModels = await getAvailableModelCandidates(aiClient)
+
+    for (const candidateModel of candidateModels) {
+        try {
+            response = await aiClient.models.generateContent({
+                model: candidateModel,
+                contents: prompt,
+                config: {
+                    responseMimeType,
+                    responseSchema,
+                }
+            })
+            console.log(`AI generateContent succeeded with model: ${candidateModel}`)
+            break
+        } catch (err) {
+            lastError = err
+            const statusCode = err?.error?.code || err?.status || (err?.response?.status)
+            const message = err?.error?.message || err?.message || String(err)
+            const serializedErr = `${statusCode || 'unknown'}: ${message}`
+            console.warn(`AI generateContent model ${candidateModel} failed:`, serializedErr)
+
+            if (statusCode === 403) {
+                throw new Error("AI service permission denied (API key blocked or invalid). Replace GOOGLE_GENAI_API_KEY.")
+            }
+
+            // Retry on transient errors or rate limits with next candidate
+            if ([429, 502, 503, 504].includes(Number(statusCode)) || message.toLowerCase().includes("fetch failed")) {
+                continue
+            }
+
+            // For bad prompt/validation, still try next candidate
+            if ([400, 404].includes(Number(statusCode))) {
+                continue
+            }
+
+            // For all other errors, stop fallback and expose
+            break
+        }
+    }
+
+    if (!response) {
+        const msg = lastError?.error?.message || lastError?.message || 'unknown'
+        let statusCode = lastError?.error?.code || lastError?.status || (lastError?.response && lastError.response.status) || 500
+        if (statusCode === 404) {
+            statusCode = 503
+        }
+        const finalError = new Error(`AI service call failed after model fallback: ${msg}`)
+        finalError.statusCode = statusCode
+        finalError.lastModelTried = candidateModels
+        throw finalError
+    }
+
+    return response
+}
+
+
 
 
 async function generatePdfFromHtml(htmlContent) {
@@ -257,13 +370,12 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
                         The resume should not be so lengthy, it should ideally be 1-2 pages long when converted to PDF. Focus on quality rather than quantity and make sure to include all the relevant information that can increase the candidate's chances of getting an interview call for the given job description.
                     `
 
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: zodToJsonSchema(resumePdfSchema),
-        }
+    const aiClient = await getGenAiClient()
+    const response = await generateContentUsingFallback({
+        aiClient,
+        prompt,
+        responseMimeType: "application/json",
+        responseSchema: zodToJsonSchema(resumePdfSchema),
     })
 
 
@@ -275,4 +387,4 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
 
 }
 
-module.exports = { generateInterviewReport, generateResumePdf }
+module.exports = { generateInterviewReport, generateResumePdf, getGenAiClient }

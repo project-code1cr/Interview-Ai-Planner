@@ -55,19 +55,52 @@ const pdfParse = require("pdf-parse")
 const { generateInterviewReport, generateResumePdf } = require("../services/ai.service")
 const interviewReportModel = require("../models/interviewReport.model")
 
-
-
+// Prevent users from firing multiple heavy AI calls in parallel from UI retries.
+// This is a short-term in-memory lock, not a perfect distributed solution.
+const pendingReportRequests = new Map()
+const lastReportRequestTs = new Map()
+const REPORT_COOLDOWN_MS = 30 * 1000
 
 /**
  * @description Controller to generate interview report based on user self description, resume and job description.
  */
 async function generateInterViewReportController(req, res) {
+    const userId = req.user?.id
+    if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" })
+    }
+
+    if (pendingReportRequests.has(userId)) {
+        const retryAfter = Math.ceil(REPORT_COOLDOWN_MS / 1000)
+        res.setHeader("Retry-After", retryAfter)
+        return res.status(429).json({ message: "You already have a report generation in progress. Please wait before trying again.", retryAfter })
+    }
+
+    const lastTimestamp = lastReportRequestTs.get(userId)
+    if (lastTimestamp && Date.now() - lastTimestamp < REPORT_COOLDOWN_MS) {
+        const remainingMs = REPORT_COOLDOWN_MS - (Date.now() - lastTimestamp)
+        const retryAfter = Math.ceil(remainingMs / 1000)
+        res.setHeader("Retry-After", retryAfter)
+        return res.status(429).json({ message: `Please wait ${retryAfter} seconds before retrying report generation.`, retryAfter })
+    }
+
+    pendingReportRequests.set(userId, Date.now())
+
     try {
         const { selfDescription, jobDescription } = req.body
 
-        if (!req.file && !selfDescription) {
+        if (!req.file) {
+            pendingReportRequests.delete(userId)
             return res.status(400).json({
-                message: "Either a resume file or selfDescription is required."
+                message: "A PDF resume file is required to generate the interview report."
+            })
+        }
+
+        const file = req.file
+        if (!file.mimetype || !file.mimetype.includes("pdf")) {
+            pendingReportRequests.delete(userId)
+            return res.status(400).json({
+                message: "Resume must be a PDF file."
             })
         }
 
@@ -135,12 +168,36 @@ async function generateInterViewReportController(req, res) {
             interviewReport
         })
     } catch (error) {
-        console.error("generateInterViewReportController error:", error)
-        return res.status(500).json({
-            message: "Internal Server Error while generating interview report.",
-            error: error.message || "Unknown error",
-            stack: process.env.NODE_ENV === "development" ? error.stack : undefined
+        console.error("generateInterViewReportController error:", error, error.response?.data || "no response data")
+
+        if (error?.response?.status === 429) {
+            return res.status(429).json({
+                message: "AI provider rate limit reached. Please wait 30 seconds and retry.",
+                error: error.response?.data || error.message
+            })
+        }
+
+        const details = {
+            message: error.message,
+            name: error.name,
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        }
+
+        if (error?.response) {
+            details.responseStatus = error.response.status
+            details.responseData = error.response.data
+        }
+
+        const statusFromError = error.statusCode || error.responseStatus || error?.error?.code || 500
+        const httpStatus = Number(statusFromError) >= 400 && Number(statusFromError) < 600 ? Number(statusFromError) : 500
+
+        return res.status(httpStatus).json({
+            message: "Error generating interview report.",
+            error: details
         })
+    } finally {
+        pendingReportRequests.delete(userId)
+        lastReportRequestTs.set(userId, Date.now())
     }
 }
 

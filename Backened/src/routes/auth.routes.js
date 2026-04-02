@@ -1,6 +1,7 @@
 const {Router}=require('express')
 const authController = require("../controllers/auth.controller")
 const authMiddleware = require("../middlewares/auth.middleware")
+const { getGenAiClient } = require("../services/ai.service")
 const authRouter=Router()
 
 
@@ -33,6 +34,18 @@ authRouter.get("/logout",authController.logoutUserController)
  */
 
  authRouter.get("/get-me",authMiddleware.authUser,authController.getMeController)
+
+// very small debugging endpoint to inspect model availability
+authRouter.get("/list-models", async (req, res) => {
+    try {
+        const aiClient = await getGenAiClient()
+        const listed = await aiClient.models.list()
+        return res.status(200).json({ message: "Model list fetched", models: listed?.models || [] })
+    } catch (err) {
+        console.error("list-models error", err)
+        return res.status(500).json({ message: "Unable to list models", error: err?.message || err })
+    }
+})
 
 // Google OAuth placeholder routes (implement plain OAuth/Passport in production)
 authRouter.get("/oauth/google", authController.googleAuthRedirect)

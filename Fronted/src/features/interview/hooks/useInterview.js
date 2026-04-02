@@ -15,7 +15,7 @@ export const useInterview = () => {
 
     const { loading, setLoading, report, setReport, reports, setReports } = context
 
-    const generateReport = async ({ jobDescription, selfDescription, resumeFile }) => {
+    const generateReport = async ({ jobDescription, selfDescription, resumeFile }, attempt = 1) => {
         setLoading(true)
         let response = null
         try {
@@ -26,6 +26,12 @@ export const useInterview = () => {
             setReport(response.interviewReport)
             return response.interviewReport
         } catch (error) {
+            if (error?.response?.status === 429 && attempt < 3) {
+                const waitTimeMs = 30000 // 30 seconds
+                console.warn(`429 detected, waiting ${waitTimeMs / 1000}s before retry #${attempt + 1}`)
+                await new Promise(resolve => setTimeout(resolve, waitTimeMs))
+                return generateReport({ jobDescription, selfDescription, resumeFile }, attempt + 1)
+            }
             console.error("generateReport failed:", error)
             throw error
         } finally {
@@ -52,14 +58,21 @@ export const useInterview = () => {
         let response = null
         try {
             response = await getAllInterviewReports()
-            setReports(response.interviewReports)
+            const reportsData = response?.interviewReports ?? []
+            setReports(reportsData)
+            return reportsData
         } catch (error) {
-            console.log(error)
+            if (error?.response?.status === 401) {
+                console.warn("getReports unauthorized - user not logged in")
+                setReports([])
+                return []
+            }
+            console.error("getReports failed", error)
+            setReports([])
+            return []
         } finally {
             setLoading(false)
         }
-
-        return response.interviewReports
     }
 
     const getResumePdf = async (interviewReportId) => {
