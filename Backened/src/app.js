@@ -11,7 +11,8 @@ const allowedOrigins = [
     "https://interview-ai-planner-3.onrender.com",
     "https://interview-ai-planner-shpv.vercel.app",
     "https://interview-ai-planner-2.vercel.app",
-    "https://interview-ai-planner-4lcc.vercel.app"
+    "https://interview-ai-planner-4lcc.vercel.app",
+    "http://localhost:5173"
 ]
 
 app.use(cors({
