@@ -60,7 +60,7 @@ import { useAuth } from '../hooks/useAuth'
 
 const API_BASE_URL = (
     import.meta.env.VITE_API_BASE_URL ||
-    (import.meta.env.DEV ? "http://localhost:3000" : "")
+    "https://interview-ai-planner-3.onrender.com"
 ).trim().replace(/\/$/, "")
 const GOOGLE_AUTH_URL = `${API_BASE_URL}/api/auth/oauth/google`
 

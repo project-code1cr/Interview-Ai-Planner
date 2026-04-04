@@ -8,8 +8,7 @@ app.use(express.json())
 app.use(cookieParser())
 
 const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
+    "https://interview-ai-planner-3.onrender.com",
     "https://interview-ai-planner-shpv.vercel.app",
     "https://interview-ai-planner-2.vercel.app"
 ]

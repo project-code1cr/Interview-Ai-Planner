@@ -2,7 +2,7 @@
 
 // export async function register({username, email, password}) {
 //     try{
-//         const response = await axios.post('http://localhost:3000/api/auth/register',{
+//         const response = await axios.post('https://interview-ai-planner-3.onrender.com/api/auth/register',{
 //             username, email, password
 //         },{
 //             withCredentials: true
@@ -17,7 +17,7 @@
 // export async function login({email, password}){
 //     try{
 
-//         const response = await axios.post("http://localhost:3000/api/auth/login",{
+//         const response = await axios.post("https://interview-ai-planner-3.onrender.com/api/auth/login",{
 //             email,password
 //         },{withCredentials:true})
 //         return response.data
@@ -29,7 +29,7 @@
 
 // export async function logout(){
 //     try{
-//         const response = await axios.get("http://localhost:3000/api/auth/logout", {
+//         const response = await axios.get("https://interview-ai-planner-3.onrender.com/api/auth/logout", {
 //             withCredentials:true
 //         })
 //         return response.data
@@ -40,7 +40,7 @@
  
 // export async function getMe(){
 //    try{
-//     const response = await axios.get("http://localhost:3000/api/auth/get-me",{
+//     const response = await axios.get("https://interview-ai-planner-3.onrender.com/api/auth/get-me",{
 //         withCredentials:true
 //     })
 //     return response.data
@@ -54,7 +54,7 @@ import axios from "axios"
 
 const API_BASE_URL = (
     import.meta.env.VITE_API_BASE_URL ||
-    (import.meta.env.DEV ? "http://localhost:3000" : "")
+    "https://interview-ai-planner-3.onrender.com"
 ).trim().replace(/\/$/, "")
 
 const api = axios.create({
