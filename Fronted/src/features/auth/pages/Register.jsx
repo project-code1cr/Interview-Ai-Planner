@@ -64,6 +64,12 @@ import { useNavigate, Link } from 'react-router'
 import "../auth.form.scss"
 import { useAuth } from '../hooks/useAuth'
 
+const API_BASE_URL = (
+    import.meta.env.VITE_API_BASE_URL ||
+    (import.meta.env.DEV ? "http://localhost:3000" : "")
+).trim().replace(/\/$/, "")
+const GOOGLE_AUTH_URL = `${API_BASE_URL}/api/auth/oauth/google`
+
 const Register = () => {
 
     const { loading, handleRegister } = useAuth()
@@ -111,7 +117,7 @@ const Register = () => {
                 <button
                     type='button'
                     className='button secondary-button'
-                    onClick={() => { window.location.href = 'http://localhost:3000/api/auth/oauth/google' }}
+                    onClick={() => { window.location.href = GOOGLE_AUTH_URL }}
                 >
                     Continue with Google
                 </button>
